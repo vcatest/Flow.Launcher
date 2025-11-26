@@ -1,37 +1,52 @@
 name: .NET
+
 on:
   push:
     branches: [ "dev" ]
   pull_request:
     branches: [ "dev" ]
   workflow_dispatch:
+
 jobs:
   build:
-    runs-on: ubuntu-latest
-    container: ubuntu:20.04
+    runs-on: ubuntu-20.04
+
     steps:
     - uses: actions/checkout@v4
-    
-    - name: Install dependencies (curl, wget, libssl1.1)
+
+    # Fix APT mirrors & install dependencies safely
+    - name: Install dependencies (curl, wget, libssl1.1, Java)
       run: |
-        apt-get update
-        apt-get install curl wget libssl1.1 -y 
-    
-    # #NEW STEP: Install Java (OpenJDK 11 is a common, stable version)
-    - name: Install Java for Embold Scanner
-      run: |
-        apt-get install openjdk-11-jre -y
-        
+        sudo sed -i 's|http://archive.ubuntu.com/ubuntu|http://mirrors.edge.kernel.org/ubuntu/|g' /etc/apt/sources.list
+        sudo apt-get clean
+        sudo apt-get update --fix-missing
+        sudo apt-get install -y --fix-missing curl wget libssl1.1 openjdk-11-jre publicsuffix
+
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: 3.0.x
-        
+
     - name: Embold Analyse
       run: |
         curl https://v1.embold.io/nfs/CLI/browserstack-codequality-scanner.tar.gz -o browserstack-codequality-scanner-archive.tar.gz
         tar xvf browserstack-codequality-scanner-archive.tar.gz
         echo "Download and extract BrowserStack CQ Scanner done"
-        curl --silent --location --request GET "http://63.176.47.15:5054/api/v1/repositories/841e052c7d355a559e07e37d927d10e5/scans/config/download" --header "Authorization:Bearer ${{ secrets.EMBOLD_SCAN_TOKEN_CS}}" -o repository-configuration.json
+
+        curl --silent --location --request GET \
+        "http://63.176.47.15:5054/api/v1/repositories/841e052c7d355a559e07e37d927d10e5/scans/config/download" \
+        --header "Authorization:Bearer ${{ secrets.EMBOLD_SCAN_TOKEN_CS}}" \
+        -o repository-configuration.json
+
         echo "Download repository configuration file done"
-        ./browserstack-codequality-scanner/bin/embold-scanner analyse -u http://63.176.47.15:5054 -t ${{ secrets.EMBOLD_SCAN_TOKEN_CS }} -r 841e052c7d355a559e07e37d927d10e5 -b . -d ./embold-data -c ./repository-configuration.json -l ./embold-log -sh $GITHUB_WORKSPACE/embold-scanner-home -v
+
+        ./browserstack-codequality-scanner/bin/embold-scanner analyse \
+          -u http://63.176.47.15:5054 \
+          -t ${{ secrets.EMBOLD_SCAN_TOKEN_CS }} \
+          -r 841e052c7d355a559e07e37d927d10e5 \
+          -b . \
+          -d ./embold-data \
+          -c ./repository-configuration.json \
+          -l ./embold-log \
+          -sh $GITHUB_WORKSPACE/embold-scanner-home \
+          -v
